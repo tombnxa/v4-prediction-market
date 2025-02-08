@@ -14,6 +14,27 @@ import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import "./NewMath.sol";
 import "./FakeDai.sol";
 
+/**
+ * @title LsLMSR Market Maker
+ * @notice This contract implements a Liquidity-Sensitive LMSR market maker that works with the
+ * Conditional Tokens framework.
+ * 
+ * @dev This contract operates on two layers:
+ * 1. Protocol Layer (Conditional Tokens):
+ *    - Questions are identified by bytes32 questionId
+ *    - Outcomes are represented as bit arrays (powers of 2)
+ *    - Example: For 4 outcomes, valid indices are 1,2,4,8 (2^0, 2^1, 2^2, 2^3)
+ * 
+ * 2. Metadata Layer (Factory):
+ *    - Human-readable questions stored in LsLMSRFactory
+ *    - Human-readable outcomes mapped to protocol indices
+ *    - Example: "Chiefs" = 1, "Ravens" = 2, etc.
+ * 
+ * When users interact with buy(), they must use the protocol layer indices.
+ * For example:
+ * - To bet on Chiefs (first outcome): market.buy(1, amount)  // 1 = 2^0
+ * - To bet on Ravens (second outcome): market.buy(2, amount)  // 2 = 2^1
+ */
 contract LsLMSR is IERC1155Receiver, Ownable {
 
   /**
@@ -283,12 +304,12 @@ contract LsLMSR is IERC1155Receiver, Ownable {
   }
 
   function onERC1155Received(
-    address operator,
-    address from,
-    uint256 id,
-    uint256 value,
-    bytes calldata data
-  ) external override returns(bytes4) {
+    address /* operator */,
+    address /* from */,
+    uint256 /* id */,
+    uint256 /* value */,
+    bytes calldata /* data */
+  ) external pure override returns(bytes4) {
     return this.onERC1155Received.selector;
   }
 

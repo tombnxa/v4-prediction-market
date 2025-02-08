@@ -213,7 +213,7 @@ library NewMath {
         if (n >= 0) {
             // Shift left: 2^n = ONE << n.
             require(uint256(uint128(n)) < 128, "exp_2: integer part too large");
-            result = int128(uint128(ONE) << uint256(uint128(n)));
+            result = int128(uint128(ONE) << uint128(n));
         } else {
             // For negative n, shift right.
             uint256 shift = uint256(uint128(-n));
