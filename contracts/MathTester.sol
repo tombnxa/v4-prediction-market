@@ -27,4 +27,17 @@ contract MathTester {
     function ln(int128 x) public pure returns (int128) {
         return NewMath.ln(x);
     }
+    
+    function add(int128 x, int128 y) public pure returns (int128) {
+        return NewMath.add(x, y);
+    }
+    
+    function div(int128 x, int128 y) public pure returns (int128) {
+        return NewMath.div(x, y);
+    }
+    
+    // Constant for ONE in 64.64 fixed point
+    function getONE() public pure returns (int128) {
+        return 0x10000000000000000; // Same as NewMath.ONE
+    }
 }

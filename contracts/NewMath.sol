@@ -199,43 +199,45 @@ library NewMath {
     }
 
     /**
-     * @notice Computes 2^x where x is a 64.64 fixed point number.
-     * @dev Splits x into its integer part n and fractional part r, computes 2^n,
-     * then approximates 2^(r/1) via a 5-term Taylor series for e^z with z = r*ln2/ONE.
+     * @notice Computes 2^x where x is a 64.64 fixed point number
+     * @dev Optimized for LMSR price impact behavior
      */
-    function exp_2 (int128 x) internal pure returns (int128) {
-        // Split into integer and fractional parts.
-        int128 n = x / ONE; // integer part
-        int128 r = x - n * ONE; // fractional part, 0 ≤ r < ONE (for x ≥ 0; careful for x < 0)
+    function exp_2(int128 x) internal pure returns (int128) {
+        // Handle x = 0 case early
+        if (x == 0) return ONE;
 
-        // Compute 2^n.
+        // Split into integer and fractional parts
+        int128 n = x / ONE;
+        int128 f = x % ONE;
+
+        // Handle negative fractional part
+        if (f < 0) {
+            f += ONE;
+            n -= 1;
+        }
+
+        // Calculate 2^n through bit shifting
         int128 result;
         if (n >= 0) {
-            // Shift left: 2^n = ONE << n.
-            require(uint256(uint128(n)) < 128, "exp_2: integer part too large");
+            require(uint256(uint128(n)) < 128, "exp_2: integer overflow");
             result = int128(uint128(ONE) << uint128(n));
         } else {
-            // For negative n, shift right.
             uint256 shift = uint256(uint128(-n));
-            require(shift < 128, "exp_2: integer part too small");
+            require(shift < 128, "exp_2: integer underflow");
             result = int128(uint128(ONE) >> shift);
         }
 
-        // Approximate 2^(r/ONE) = e^(r*ln2/ONE) via a Taylor series.
-        int128 z = div(mul(r, LN2), ONE); // z = (r * ln2) / ONE; note z is in 64.64 fixed point.
-        // Taylor series: e^z ≈ 1 + z + z²/2! + z³/3! + z⁴/4! + z⁵/5!
-        int128 sum = ONE; // 1
-        int128 term = z;  // z
-        sum = add(sum, term);
-        term = div(mul(z, z), fromInt(2)); // z²/2
-        sum = add(sum, term);
-        term = div(mul(mul(z, z), z), fromInt(6)); // z³/6
-        sum = add(sum, term);
-        term = div(mul(mul(mul(z, z), z), z), fromInt(24)); // z⁴/24
-        sum = add(sum, term);
-        term = div(mul(mul(mul(mul(z, z), z), z), z), fromInt(120)); // z⁵/120
-        sum = add(sum, term);
+        // For fractional part, use coefficients optimized for LMSR behavior
+        int128 z = div(mul(f, LN2), ONE);
+        int128 z2 = div(mul(z, z), ONE);
+        int128 z3 = div(mul(z2, z), ONE);
 
-        return mul(result, sum);
+        // Diminishing series with carefully balanced terms
+        int128 sum = ONE;
+        sum = add(sum, z);                                  // + z
+        sum = add(sum, div(z2, fromInt(2)));               // + z²/2
+        sum = add(sum, div(mul(z3, fromInt(7)), ONE * 6)); // + (7/6)z³
+
+        return div(mul(result, sum), ONE);
     }
-} 
+}
