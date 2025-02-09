@@ -90,15 +90,6 @@ describe("Stage 3: Market Creation", () => {
         }
     });
 
-    afterEach(() => {
-        // Validate state after market creation
-        globalState.validate('Stage 3', [
-            'marketAddress',
-            'conditionalTokensAddress',
-            'factoryAddress'
-        ]);
-    });
-
     describe("3.1 Market Creation Flow", () => {
         before(async () => {
             // Validate all required parameters exist
@@ -163,6 +154,14 @@ describe("Stage 3: Market Creation", () => {
             console.log(`1. User A's initial DAI balance: ${ethers.formatEther(userADaiBefore)}`);
             
             try {
+                console.log("\nStarting market creation transaction...");
+                console.log("Input parameters:");
+                console.log(`- DAI Address: ${await dai.getAddress()}`);
+                console.log(`- Oracle Address: ${mrResolver.address}`);
+                console.log(`- Question ID: ${globalState.questionId}`);
+                console.log(`- Outcome Count: ${OUTCOME_SLOTS}`);
+                console.log(`- Subsidy Amount: ${ethers.formatEther(globalState.subsidy)} DAI`);
+                
                 const tx = await factory.connect(userA).createAndSetupMarket(
                     await dai.getAddress(),
                     mrResolver.address,
@@ -173,13 +172,37 @@ describe("Stage 3: Market Creation", () => {
                     outcomes
                 );
                 
+                console.log("\nTransaction sent:", tx.hash);
+                console.log("Waiting for confirmation...");
+                
                 const receipt = await tx.wait(1);
+                console.log("\nTransaction confirmed!");
+                console.log("Gas used:", receipt.gasUsed.toString());
+                console.log("Block number:", receipt.blockNumber);
+                
+                // Log all events from the receipt
+                console.log("\nEvents emitted:");
+                receipt.logs.forEach((log, i) => {
+                    try {
+                        if (log.fragment) {
+                            console.log(`${i + 1}. ${log.fragment.name}`);
+                            console.log("   Args:", log.args);
+                        } else {
+                            console.log(`${i + 1}. Unknown event:`, log);
+                        }
+                    } catch (e) {
+                        console.log(`${i + 1}. Failed to parse event:`, e.message);
+                    }
+                });
                 
                 // Validate market creation event
                 const event = receipt.logs.find(log => 
                     log.fragment && log.fragment.name === 'MarketCreated'
                 );
+                
                 if (!event) {
+                    console.error("\nMarketCreated event not found in transaction logs!");
+                    console.error("Available events:", receipt.logs.map(l => l.fragment?.name).join(", "));
                     throw new Error("Market Creation: MarketCreated event not found");
                 }
                 
@@ -243,8 +266,26 @@ describe("Stage 3: Market Creation", () => {
                 console.log(`3. User A's final DAI balance: ${ethers.formatEther(userADaiAfter)}`);
                 console.log(`4. DAI spent on market creation: ${ethers.formatEther(globalState.subsidy)}`);
             } catch (error) {
-                throw new Error(`Market Creation failed: ${error.message}`);
+                console.error("\nDetailed error information:");
+                console.error("Error name:", error.name);
+                console.error("Error message:", error.message);
+                if (error.transaction) {
+                    console.error("Transaction hash:", error.transaction.hash);
+                }
+                if (error.receipt) {
+                    console.error("Transaction receipt:", error.receipt);
+                }
+                throw error;
             }
+
+            // Move validation here after market creation succeeds
+            after(() => {
+                globalState.validate('Stage 3', [
+                    'marketAddress',
+                    'conditionalTokensAddress',
+                    'factoryAddress'
+                ]);
+            });
         });
 
         it("Market should have received the correct liquidity", async () => {
@@ -258,4 +299,4 @@ describe("Stage 3: Market Creation", () => {
             // ... rest of the test
         });
     });
-}); 
+});
