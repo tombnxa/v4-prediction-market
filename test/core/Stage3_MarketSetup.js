@@ -1,5 +1,6 @@
 const { expect } = require("chai");
 const { ethers } = require("hardhat");
+const globalState = require("../shared/testState");
 
 describe("Stage 3: Market Creation", () => {
     // Define ALL shared variables at the top level
@@ -19,96 +20,110 @@ describe("Stage 3: Market Creation", () => {
     let admin, userA, mrResolver, alice, otherUsers;
     
     before(async () => {
-        // Set up our test data first
+        // Validate required state from previous stages
+        globalState.validate('Stage 3 Setup', [
+            'fakeDaiAddress',
+            'signers.admin',
+            'signers.userA',
+            'signers.mrResolver',
+            'initialBalances.userA'
+        ]);
+
+        // Get signers from global state
+        admin = globalState.signers.admin;
+        userA = globalState.signers.userA;
+        mrResolver = globalState.signers.mrResolver;
+
+        // Set up market parameters
         outcomes = ["Chiefs", "Ravens", "Buccaneers", "Other"];
         questionId = ethers.hexlify(ethers.randomBytes(32));
 
-        // Validate global state from previous stages
-        if (!global.testState?.fakeDaiAddress) {
-            throw new Error("Stage 3 Setup: Missing FakeDai address from Stage 1");
-        }
-
-        // Get existing signers
-        [admin, userA, mrResolver, alice, ...otherUsers] = await ethers.getSigners();
-        if (!admin || !userA || !mrResolver) {
-            throw new Error("Stage 3 Setup: Failed to get required signers");
-        }
-        
         try {
-            // Get existing FakeDai deployment with validation
+            // Get existing FakeDai deployment
             const FakeDai = await ethers.getContractFactory("FakeDai");
-            dai = FakeDai.attach(global.testState.fakeDaiAddress);
-            // Validate contract exists
-            await dai.getAddress();
-        } catch (error) {
-            throw new Error(`Stage 3 Setup: Failed to attach to FakeDai: ${error.message}`);
-        }
-        
-        console.log("Admin Actions - Infrastructure Deployment:");
-        
-        try {
-            // 1. Deploy ConditionalTokens
+            dai = FakeDai.attach(globalState.fakeDaiAddress);
+
+            // Log state before deployment
+            console.log("\nUsing existing contracts:");
+            console.log(`FakeDai: ${globalState.fakeDaiAddress}`);
+            
+            // Deploy infrastructure
             const CT = await ethers.getContractFactory("ConditionalTokens");
-            ct = await CT.deploy({ gasLimit: 5000000 });
+            ct = await CT.deploy();
             await ct.waitForDeployment();
             const ctAddress = await ct.getAddress();
-            console.log("1. Admin deployed ConditionalTokens to:", ctAddress);
-
-            // 2. Deploy Factory (no condition preparation needed)
+            globalState.conditionalTokensAddress = ctAddress;
+            console.log(`Deployed ConditionalTokens: ${ctAddress}`);
+            
             const Factory = await ethers.getContractFactory("LsLMSRFactory");
-            factory = await Factory.deploy(ctAddress, { gasLimit: 5000000 });
+            factory = await Factory.deploy(ctAddress);
             await factory.waitForDeployment();
             const factoryAddress = await factory.getAddress();
-            console.log("2. Admin deployed LsLMSRFactory to:", factoryAddress);
+            globalState.factoryAddress = factoryAddress;
+            console.log(`Deployed Factory: ${factoryAddress}`);
 
-            // Store everything in global state
-            Object.assign(global.testState, {
-                conditionalTokensAddress: ctAddress,
-                factoryAddress: factoryAddress,
+            // Store market parameters in global state
+            Object.assign(globalState, {
                 outcomes,
                 outcomeSlots: OUTCOME_SLOTS,
                 outcomeIndices: OUTCOME_INDICES,
                 questionId,
                 question: "Who will win the Superbowl",
-                subsidy: ethers.parseEther("1000"),
-                overround: 501
+                subsidy: ethers.parseEther("100")
             });
+
+            // Log updated state
+            console.log("\nGlobal State after infrastructure setup:");
+            console.log(JSON.stringify({
+                fakeDaiAddress: globalState.fakeDaiAddress,
+                conditionalTokensAddress: globalState.conditionalTokensAddress,
+                factoryAddress: globalState.factoryAddress,
+                marketParams: {
+                    outcomes: globalState.outcomes,
+                    questionId: globalState.questionId,
+                    subsidy: ethers.formatEther(globalState.subsidy)
+                }
+            }, null, 2));
 
         } catch (error) {
             throw new Error(`Stage 3 Setup: ${error.message}`);
         }
     });
 
+    afterEach(() => {
+        // Validate state after market creation
+        globalState.validate('Stage 3', [
+            'marketAddress',
+            'conditionalTokensAddress',
+            'factoryAddress'
+        ]);
+    });
+
     describe("3.1 Market Creation Flow", () => {
         before(async () => {
             // Validate all required parameters exist
             const requiredParams = [
-                'questionId', 'subsidy', 'overround', 'question'
+                'questionId', 'subsidy', 'question'
             ];
             
             for (const param of requiredParams) {
-                if (!global.testState[param]) {
+                if (!globalState[param]) {
                     throw new Error(`Market Creation: Missing required parameter: ${param}`);
                 }
             }
 
             // Validate parameter types and values
-            if (typeof global.testState.question !== 'string' || global.testState.question.length === 0) {
+            if (typeof globalState.question !== 'string' || globalState.question.length === 0) {
                 throw new Error('Market Creation: Invalid question format');
             }
 
-            if (!ethers.isHexString(global.testState.questionId, 32)) {
+            if (!ethers.isHexString(globalState.questionId, 32)) {
                 throw new Error('Market Creation: Invalid questionId format - must be 32 byte hex');
             }
 
-            const subsidy = global.testState.subsidy;
+            const subsidy = globalState.subsidy;
             if (subsidy <= 0n) {
                 throw new Error('Market Creation: Subsidy must be greater than 0');
-            }
-
-            const overround = global.testState.overround;
-            if (overround < 100 || overround > 1000) {
-                throw new Error('Market Creation: Overround must be between 100 and 1000 basis points');
             }
         });
 
@@ -127,23 +142,22 @@ describe("Stage 3: Market Creation", () => {
         it("User A should approve factory to spend DAI", async () => {
             const tx = await dai.connect(userA).approve(
                 await factory.getAddress(),
-                global.testState.subsidy
+                globalState.subsidy
             );
             await tx.wait();
             
             const allowance = await dai.allowance(userA.address, await factory.getAddress());
-            expect(allowance).to.equal(global.testState.subsidy);
-            console.log(`User A approved factory to spend ${ethers.formatEther(global.testState.subsidy)} DAI`);
+            expect(allowance).to.equal(globalState.subsidy);
+            console.log(`User A approved factory to spend ${ethers.formatEther(globalState.subsidy)} DAI`);
         });
 
         it("User A should be able to create market through factory", async () => {
             console.log("\nCreating Market:");
             console.log("Market Parameters:");
-            console.log(`Question: ${global.testState.question}`);
-            console.log(`QuestionId: ${global.testState.questionId}`);
+            console.log(`Question: ${globalState.question}`);
+            console.log(`QuestionId: ${globalState.questionId}`);
             console.log(`Outcomes: ${outcomes.join(", ")}`);
-            console.log(`Subsidy: ${ethers.formatEther(global.testState.subsidy)} DAI`);
-            console.log(`Overround: ${global.testState.overround/100}%`);
+            console.log(`Subsidy: ${ethers.formatEther(globalState.subsidy)} DAI`);
 
             const userADaiBefore = await dai.balanceOf(userA.address);
             console.log(`1. User A's initial DAI balance: ${ethers.formatEther(userADaiBefore)}`);
@@ -152,11 +166,10 @@ describe("Stage 3: Market Creation", () => {
                 const tx = await factory.connect(userA).createAndSetupMarket(
                     await dai.getAddress(),
                     mrResolver.address,
-                    global.testState.questionId,
+                    globalState.questionId,
                     OUTCOME_SLOTS,
-                    global.testState.subsidy,
-                    global.testState.overround,
-                    global.testState.question,
+                    globalState.subsidy,
+                    globalState.question,
                     outcomes
                 );
                 
@@ -172,6 +185,9 @@ describe("Stage 3: Market Creation", () => {
                 
                 const marketAddress = event.args[0];
                 
+                // Store market address in global state
+                globalState.marketAddress = marketAddress;
+                
                 // Validate market contract deployment
                 const marketCode = await ethers.provider.getCode(marketAddress);
                 if (marketCode === "0x") {
@@ -181,10 +197,19 @@ describe("Stage 3: Market Creation", () => {
                 market = await ethers.getContractAt("LsLMSR", marketAddress);
                 console.log(`2. Market created at ${marketAddress}`);
 
-                // Store market address in global state
-                Object.assign(global.testState, {
-                    marketAddress: marketAddress
-                });
+                // Log updated state after market creation
+                console.log("\nGlobal State after market creation:");
+                console.log(JSON.stringify({
+                    fakeDaiAddress: globalState.fakeDaiAddress,
+                    conditionalTokensAddress: globalState.conditionalTokensAddress,
+                    factoryAddress: globalState.factoryAddress,
+                    marketAddress: globalState.marketAddress,
+                    marketParams: {
+                        outcomes: globalState.outcomes,
+                        questionId: globalState.questionId,
+                        subsidy: ethers.formatEther(globalState.subsidy)
+                    }
+                }, null, 2));
 
                 // Validate market state
                 const marketToken = await market.token();
@@ -211,12 +236,12 @@ describe("Stage 3: Market Creation", () => {
                 }
 
                 // Validate balance changes
-                const expectedBalance = BigInt(userADaiBefore) - BigInt(global.testState.subsidy);
+                const expectedBalance = BigInt(userADaiBefore) - BigInt(globalState.subsidy);
                 const userADaiAfter = await dai.balanceOf(userA.address);
                 expect(userADaiAfter).to.equal(expectedBalance);
                 
                 console.log(`3. User A's final DAI balance: ${ethers.formatEther(userADaiAfter)}`);
-                console.log(`4. DAI spent on market creation: ${ethers.formatEther(global.testState.subsidy)}`);
+                console.log(`4. DAI spent on market creation: ${ethers.formatEther(globalState.subsidy)}`);
             } catch (error) {
                 throw new Error(`Market Creation failed: ${error.message}`);
             }
@@ -224,12 +249,12 @@ describe("Stage 3: Market Creation", () => {
 
         it("Market should have received the correct liquidity", async () => {
             const marketBalance = await dai.balanceOf(await market.getAddress());
-            expect(marketBalance).to.equal(global.testState.subsidy);
+            expect(marketBalance).to.equal(globalState.subsidy);
             console.log(`\nMarket has received ${ethers.formatEther(marketBalance)} DAI liquidity`);
         });
 
         it("Should create market with correct parameters", async () => {
-            expect(outcomes).to.deep.equal(global.testState.outcomes);
+            expect(outcomes).to.deep.equal(globalState.outcomes);
             // ... rest of the test
         });
     });

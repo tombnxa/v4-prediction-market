@@ -1,5 +1,6 @@
 const { expect } = require("chai");
 const { ethers } = require("hardhat");
+const globalState = require("../shared/testState");
 
 describe("Stage 1: Base Setup", () => {
     // Test participants - consolidated signer setup
@@ -13,8 +14,17 @@ describe("Stage 1: Base Setup", () => {
     let fakeDai;         // Test ERC20 token
     
     before(async () => {
-        // Setup test participants - single signer setup
-        [admin, userA, mrResolver, alice, ...otherUsers] = await ethers.getSigners();
+        // Get signers
+        const [admin, userA, mrResolver, alice, ...otherUsers] = await ethers.getSigners();
+        
+        // Store signers in global state first
+        globalState.signers = {
+            admin,
+            userA,
+            mrResolver,
+            alice,
+            otherUsers
+        };
         
         console.log("\nTest Participants:");
         console.log(`Admin/Deployer: ${admin.address}`);
@@ -22,36 +32,47 @@ describe("Stage 1: Base Setup", () => {
         console.log(`Market Resolver: ${mrResolver.address}`);
         console.log(`Alice (Trader): ${alice.address}\n`);
         
-        // Deploy FakeDai - single deployment
+        // Deploy FakeDai only once
         const FakeDai = await ethers.getContractFactory("FakeDai");
-        fakeDai = await FakeDai.deploy({ gasLimit: 5000000 });
+        fakeDai = await FakeDai.deploy();
         await fakeDai.waitForDeployment();
         const fakeDaiAddress = await fakeDai.getAddress();
-        console.log("FakeDai deployed to:", fakeDaiAddress);
         
-        // Store contract addresses in global state
-        global.testState.fakeDaiAddress = fakeDaiAddress;
+        // Set address in global state
+        globalState.fakeDaiAddress = fakeDaiAddress;
         
-        // Initial balance is BigInt (wei) for contract interaction
-        const initialBalance = ethers.parseEther("1000000");  // 1M * 10^18
+        // Mint initial balances
+        const initialBalance = ethers.parseEther("1000000");
         await fakeDai.mint(userA.address, initialBalance);
         await fakeDai.mint(alice.address, initialBalance);
         
-        // Convert BigInts to strings only for display
-        console.log("Initial token balances minted:");
-        const userABalance = await fakeDai.balanceOf(userA.address);
-        const aliceBalance = await fakeDai.balanceOf(alice.address);
-        console.log(`User A: ${ethers.formatEther(userABalance)} DAI`);
-        console.log(`Alice: ${ethers.formatEther(aliceBalance)} DAI`);
-
         // Store balances in global state
-        Object.assign(global.testState, {
-            fakeDaiAddress,
-            initialBalances: {
-                userA: userABalance.toString(),
-                alice: aliceBalance.toString()
-            }
-        });
+        globalState.initialBalances = {
+            userA: initialBalance.toString(),
+            alice: initialBalance.toString()
+        };
+        
+        console.log("Initial token balances minted:");
+        console.log(`User A: ${ethers.formatEther(initialBalance)} DAI`);
+        console.log(`Alice: ${ethers.formatEther(initialBalance)} DAI`);
+        
+        // Log entire state for debugging
+        console.log("\nGlobal State after Stage 1 setup:");
+        console.log(JSON.stringify({
+            fakeDaiAddress: globalState.fakeDaiAddress,
+            signers: {
+                admin: globalState.signers.admin.address,
+                userA: globalState.signers.userA.address,
+                mrResolver: globalState.signers.mrResolver.address,
+                alice: globalState.signers.alice.address
+            },
+            initialBalances: globalState.initialBalances
+        }, null, 2));
+    });
+
+    afterEach(() => {
+        // Validate required state after Stage 1
+        globalState.validate('Stage 1', ['fakeDaiAddress', 'signers.userA', 'initialBalances.userA']);
     });
 
     describe("1.1 Contract Loading", () => {

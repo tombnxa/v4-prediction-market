@@ -42,7 +42,6 @@ contract LsLMSRFactory is Ownable {
         bytes32 questionId,
         uint outcomeCount,
         uint subsidy,
-        uint overround,
         string memory question,
         string[] memory outcomes
     ) external returns (address) {
@@ -70,8 +69,7 @@ contract LsLMSRFactory is Ownable {
             oracle,
             questionId,
             outcomeCount,
-            subsidy,
-            overround
+            subsidy
         );
 
         markets.push(market);

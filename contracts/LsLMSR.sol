@@ -94,18 +94,14 @@ contract LsLMSR is IERC1155Receiver, Ownable {
    * _subsidyToken Which ERC-20 token will be used to purchase and redeem
       outcome tokens for this condition
    * @param _subsidy How much initial funding is used to seed the market maker.
-   * @param _overround How much 'profit' does the AMM claim? Note that this is
-   * represented in bips. Therefore inputting 300 represents 0.30%
    */
   function setup(
     address _oracle,
     bytes32 _questionId,
     uint _numOutcomes,
-    uint _subsidy,
-    uint _overround
+    uint _subsidy
   ) public onlyOwner() {
     require(init == false, 'Already init');
-    require(_overround > 0, 'Cannot have 0 overround');
     
     // Verify we actually have the subsidy amount
     require(
@@ -122,8 +118,7 @@ contract LsLMSR is IERC1155Receiver, Ownable {
     int128 n = NewMath.fromUInt(_numOutcomes);
     int128 initial_subsidy = getTokenEth(token, _subsidy);
 
-    int128 overround = NewMath.divu(_overround, 10000);
-    alpha = NewMath.div(overround, NewMath.mul(n, NewMath.ln(n)));
+    alpha = NewMath.div(1, NewMath.mul(n, NewMath.ln(n)));
     b = NewMath.mul(NewMath.mul(initial_subsidy, n), alpha);
 
     // Initialize outcome token quantities
